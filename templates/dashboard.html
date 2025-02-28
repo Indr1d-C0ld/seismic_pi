@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard Sismografo Casalingo</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 1200px; margin: auto; padding: 20px; }
+    .section { margin-bottom: 40px; }
+    label { margin-right: 10px; }
+    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 5px; }
+    table { width: 100%; }
+    #chart { border: 1px solid #ccc; height: 300px; position: relative; background: #fff; }
+    .nav { margin-bottom: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    .filter, .chart-controls { margin-bottom: 20px; }
+    button.reset, button.live-btn { margin-top: 10px; padding: 5px 10px; }
+    /* Quadrettatura tecnica */
+    .grid line {
+      stroke: #ccc;
+      stroke-dasharray: 2,2;
+    }
+    .grid path {
+      stroke-width: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/admin">Admin</a>
+    </div>
+    <h1>Dashboard Sismografo Casalingo</h1>
+    
+    <!-- Filtri avanzati -->
+    <div class="section filter">
+      <h3>Filtri Avanzati</h3>
+      <label for="start_date">Data Inizio:</label>
+      <input type="datetime-local" id="start_date">
+      <label for="end_date">Data Fine:</label>
+      <input type="datetime-local" id="end_date">
+      <label for="event_type">Tipo Evento:</label>
+      <select id="event_type">
+        <option value="">Tutti</option>
+        <option value="Accelerazione">Accelerazione</option>
+        <option value="Rotazione">Rotazione</option>
+      </select>
+      <button onclick="applyFilters()">Applica Filtri</button>
+      <button class="reset" onclick="resetFilters()">Reset Filtri</button>
+      <button class="live-btn" onclick="setLiveMode()">Live</button>
+    </div>
+    
+    <!-- Controlli slide per il grafico -->
+    <div class="section chart-controls">
+      <h3>Controlli Grafico</h3>
+      <label for="xWindowSlider">Finestra temporale (secondi):</label>
+      <input type="range" id="xWindowSlider" min="60" max="1800" step="60" value="{{ config['chart_buffer'] }}">
+      <span id="xWindowValue">{{ config['chart_buffer'] }}</span> sec
+      <br>
+      <label for="yScaleSlider">Fattore scala Y:</label>
+      <input type="range" id="yScaleSlider" min="0.5" max="5" step="0.1" value="1">
+      <span id="yScaleValue">1</span>
+    </div>
+
+    <!-- Grafico rullo sismografico -->
+    <div class="section" id="graphSection">
+      <h2>Rullo Sismografico</h2>
+      <div id="chart"></div>
+    </div>
+
+    <!-- Dati grezzi -->
+    <div class="section" id="rawDataSection">
+      <h2>Dati Grezzi</h2>
+      <table id="rawDataTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Timestamp</th>
+            <th>Accel X</th>
+            <th>Accel Y</th>
+            <th>Accel Z</th>
+            <th>Gyro X</th>
+            <th>Gyro Y</th>
+            <th>Gyro Z</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <button onclick="exportCSV()">Esporta CSV</button>
+      <button onclick="exportJSON()">Esporta JSON</button>
+    </div>
+
+    <!-- Eventi anomali -->
+    <div class="section" id="eventsSection">
+      <h2>Eventi Anomali</h2>
+      <table id="eventsTable">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Tipo</th>
+            <th>Valore</th>
+            <th>Descrizione</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Variabili di configurazione passate dal server
+    var visualization_mode = "{{ config['visualization_mode'] }}";
+    var chart_buffer = parseFloat("{{ config['chart_buffer'] }}"); // in secondi
+
+    // Flag per la modalità live (aggiornamento automatico)
+    let liveMode = true;
+    let currentFilters = {};
+
+    // Variabili globali per D3 e zoom
+    let svg, gX, gY, gridGroup, lineGroup;
+    let zoomTransform = d3.zoomIdentity;
+    let xScale, yScale, xAxis, yAxis;
+    // Variabili per controlli slider
+    let customXWindow = chart_buffer;
+    let yScaleFactor = 1;
+
+    // Formattazione della data in UTC
+    function formatDateTime(date) {
+      let pad = num => num.toString().padStart(2, '0');
+      return date.getUTCFullYear() + "-" + pad(date.getUTCMonth()+1) + "-" + pad(date.getUTCDate()) + " " +
+             pad(date.getUTCHours()) + ":" + pad(date.getUTCMinutes()) + ":" + pad(date.getUTCSeconds());
+    }
+
+    function resetFilters() {
+      currentFilters = {};
+      document.getElementById('start_date').value = "";
+      document.getElementById('end_date').value = "";
+      document.getElementById('event_type').value = "";
+      if (!liveMode) setLiveMode();
+      else {
+        updateChart();
+        updateRawDataTable();
+        updateEventsTable();
+      }
+    }
+
+    function applyFilters() {
+      currentFilters.start_date = document.getElementById('start_date').value;
+      currentFilters.end_date = document.getElementById('end_date').value;
+      currentFilters.event_type = document.getElementById('event_type').value;
+      liveMode = false;
+      updateChart();
+      updateRawDataTable();
+      updateEventsTable();
+    }
+
+    function setLiveMode() {
+      liveMode = true;
+      zoomTransform = d3.zoomIdentity;
+      updateChart();
+      updateRawDataTable();
+      updateEventsTable();
+    }
+
+    async function fetchRawData() {
+      let url;
+      if (currentFilters.start_date && currentFilters.end_date) {
+        url = `/data?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
+      } else {
+        let now = new Date();
+        let start = new Date(now.getTime() - customXWindow * 1000);
+        url = `/data?start_date=${encodeURIComponent(formatDateTime(start))}&end_date=${encodeURIComponent(formatDateTime(now))}`;
+      }
+      const response = await fetch(url);
+      return await response.json();
+    }
+
+    async function fetchEventsData() {
+      let url = '/events?limit=50';
+      if (currentFilters.start_date && currentFilters.end_date) {
+        url += `&start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
+      }
+      if (currentFilters.event_type) {
+        url += `&type=${encodeURIComponent(currentFilters.event_type)}`;
+      }
+      const response = await fetch(url);
+      return await response.json();
+    }
+
+    async function updateRawDataTable() {
+      const data = await fetchRawData();
+      const tbody = document.querySelector('#rawDataTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.id}</td>
+                        <td>${row.timestamp}</td>
+                        <td>${row.accel_x}</td>
+                        <td>${row.accel_y}</td>
+                        <td>${row.accel_z}</td>
+                        <td>${row.gyro_x}</td>
+                        <td>${row.gyro_y}</td>
+                        <td>${row.gyro_z}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function updateEventsTable() {
+      const events = await fetchEventsData();
+      const tbody = document.querySelector('#eventsTable tbody');
+      tbody.innerHTML = '';
+      events.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${e.timestamp}</td>
+                        <td>${e.tipo}</td>
+                        <td>${e.valore}</td>
+                        <td>${e.descrizione}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Funzione zoom per preservare il pan/zoom
+    function zoomed(event) {
+      zoomTransform = event.transform;
+      liveMode = false;
+      lineGroup.attr("transform", zoomTransform);
+      gX.call(xAxis.scale(zoomTransform.rescaleX(xScale)));
+      gridGroup.attr("transform", zoomTransform);
+    }
+
+    // Gestione dei controlli slider per X e Y
+    document.getElementById("xWindowSlider").addEventListener("input", function() {
+      customXWindow = parseFloat(this.value);
+      document.getElementById("xWindowValue").textContent = this.value;
+      updateChart();
+    });
+    document.getElementById("yScaleSlider").addEventListener("input", function() {
+      yScaleFactor = parseFloat(this.value);
+      document.getElementById("yScaleValue").textContent = this.value;
+      updateChart();
+    });
+
+    async function updateChart() {
+      let data = await fetchRawData();
+      let chartData;
+      if (visualization_mode === 'triple') {
+        chartData = data.map(d => ({
+          timestamp: new Date(d.timestamp),
+          accel_x: d.accel_x,
+          accel_y: d.accel_y,
+          accel_z: d.accel_z
+        }));
+      } else {
+        chartData = data.map(d => ({
+          timestamp: new Date(d.timestamp),
+          magnitude: Math.sqrt(d.accel_x**2 + d.accel_y**2 + d.accel_z**2)
+        }));
+      }
+      
+      const width = document.getElementById('chart').clientWidth;
+      const height = 300;
+      
+      if (!svg) {
+        svg = d3.select("#chart").append("svg")
+                .attr("width", width)
+                .attr("height", height);
+        gridGroup = svg.append("g").attr("class", "grid");
+        gX = svg.append("g").attr("class", "x-axis").attr("transform", `translate(0, ${height - 30})`);
+        gY = svg.append("g").attr("class", "y-axis").attr("transform", `translate(40, 0)`);
+        lineGroup = svg.append("g").attr("class", "lines");
+        
+        svg.call(d3.zoom().scaleExtent([0.5, 20]).on("zoom", zoomed));
+      } else {
+        svg.attr("width", width).attr("height", height);
+      }
+      
+      // Se siamo in live mode, calcola il nuovo dominio X in base al buffer
+      if(liveMode){
+        let xExtent = d3.extent(chartData, d => d.timestamp);
+        xScale = d3.scaleTime().domain(xExtent).range([40, width - 20]);
+      } else {
+        // Se non siamo in live mode, mantieni il dominio attuale se definito
+        if(!xScale) {
+          let xExtent = d3.extent(chartData, d => d.timestamp);
+          xScale = d3.scaleTime().domain(xExtent).range([40, width - 20]);
+        }
+      }
+      
+      if (visualization_mode === 'triple') {
+        let yMin = d3.min(chartData, d => Math.min(d.accel_x, d.accel_y, d.accel_z));
+        let yMax = d3.max(chartData, d => Math.max(d.accel_x, d.accel_y, d.accel_z));
+        // Applica il fattore di scala Y
+        yScale = d3.scaleLinear().domain([yMin * yScaleFactor, yMax * yScaleFactor]).range([height - 30, 10]);
+      } else {
+        let yExtent = d3.extent(chartData, d => d.magnitude);
+        yScale = d3.scaleLinear().domain([yExtent[0] * yScaleFactor, yExtent[1] * yScaleFactor]).range([height - 30, 10]);
+      }
+      
+      xAxis = d3.axisBottom(xScale).ticks(5);
+      yAxis = d3.axisLeft(yScale);
+      
+      // Disegna la grid tecnica
+      gridGroup.selectAll("*").remove();
+      let xGrid = d3.axisBottom(xScale)
+                     .tickSize(-(height - 30))
+                     .tickFormat("")
+                     .ticks(10);
+      gridGroup.append("g")
+               .attr("class", "x-grid")
+               .attr("transform", `translate(0, ${height - 30})`)
+               .call(xGrid);
+      let yGrid = d3.axisLeft(yScale)
+                     .tickSize(-(width - 60))
+                     .tickFormat("")
+                     .ticks(10);
+      gridGroup.append("g")
+               .attr("class", "y-grid")
+               .attr("transform", `translate(40, 0)`)
+               .call(yGrid);
+      
+      if(liveMode){
+        gX.call(xAxis.scale(zoomTransform.rescaleX(xScale)));
+      }
+      gY.call(yAxis);
+      
+      lineGroup.selectAll("*").remove();
+      if (visualization_mode === 'triple') {
+        let lineX = d3.line()
+                      .x(d => xScale(d.timestamp))
+                      .y(d => yScale(d.accel_x));
+        let lineY = d3.line()
+                      .x(d => xScale(d.timestamp))
+                      .y(d => yScale(d.accel_y));
+        let lineZ = d3.line()
+                      .x(d => xScale(d.timestamp))
+                      .y(d => yScale(d.accel_z));
+        lineGroup.append("path")
+                 .datum(chartData)
+                 .attr("class", "line")
+                 .attr("stroke", "red")
+                 .attr("fill", "none")
+                 .attr("stroke-width", 2)
+                 .attr("d", lineX);
+        lineGroup.append("path")
+                 .datum(chartData)
+                 .attr("class", "line")
+                 .attr("stroke", "green")
+                 .attr("fill", "none")
+                 .attr("stroke-width", 2)
+                 .attr("d", lineY);
+        lineGroup.append("path")
+                 .datum(chartData)
+                 .attr("class", "line")
+                 .attr("stroke", "blue")
+                 .attr("fill", "none")
+                 .attr("stroke-width", 2)
+                 .attr("d", lineZ);
+      } else {
+        let lineMag = d3.line()
+                        .x(d => xScale(d.timestamp))
+                        .y(d => yScale(d.magnitude));
+        lineGroup.append("path")
+                 .datum(chartData)
+                 .attr("class", "line")
+                 .attr("stroke", "steelblue")
+                 .attr("fill", "none")
+                 .attr("stroke-width", 2)
+                 .attr("d", lineMag);
+      }
+      
+      // Riapplica il trasformatore di zoom
+      svg.selectAll(".lines").attr("transform", zoomTransform);
+    }
+
+    function exportCSV() {
+      let url = '/export/csv';
+      if (currentFilters.start_date && currentFilters.end_date) {
+        url += `?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
+      }
+      window.location.href = url;
+    }
+
+    function exportJSON() {
+      let url = '/export/json';
+      if (currentFilters.start_date && currentFilters.end_date) {
+        url += `?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
+      }
+      window.location.href = url;
+    }
+
+    // Aggiornamenti periodici: se in live mode, il grafico si aggiorna mantenendo il pan/zoom
+    setInterval(updateChart, 1000);
+    setInterval(updateRawDataTable, 5000);
+    setInterval(updateEventsTable, 5000);
+  </script>
+</body>
+</html>
+

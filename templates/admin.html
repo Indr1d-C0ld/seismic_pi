@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Configurazione Sismografo Casalingo</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 800px; margin: auto; padding: 20px; }
+    .nav { margin-bottom: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    label { display: block; margin-top: 10px; }
+    input, select { width: 100%; padding: 5px; margin-top: 5px; }
+    button { margin-top: 20px; padding: 10px 20px; }
+    .test-btn { background-color: #4CAF50; color: white; border: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/admin">Admin</a>
+      <a href="/historico">Storico</a>
+    </div>
+    <h1>Configurazione Sismografo Casalingo</h1>
+    <form method="POST" action="/admin">
+      <label for="accel_threshold">Soglia Accelerazione (g):</label>
+      <input type="number" step="0.1" id="accel_threshold" name="accel_threshold" value="{{ config['accel_threshold'] }}">
+      
+      <label for="gyro_threshold">Soglia Giroscopio (°/s):</label>
+      <input type="number" step="0.1" id="gyro_threshold" name="gyro_threshold" value="{{ config['gyro_threshold'] }}">
+      
+      <label for="sample_interval">Intervallo di Campionamento (s):</label>
+      <input type="number" step="0.01" id="sample_interval" name="sample_interval" value="{{ config['sample_interval'] }}">
+      
+      <label for="visualization_mode">Modalità di Visualizzazione del Rullo:</label>
+      <select id="visualization_mode" name="visualization_mode">
+        <option value="single" {% if config['visualization_mode'] == 'single' %}selected{% endif %}>Singola linea (Magnitudine)</option>
+        <option value="triple" {% if config['visualization_mode'] == 'triple' %}selected{% endif %}>Tre linee separate (X, Y, Z)</option>
+      </select>
+      
+      <label for="chart_buffer">Buffer Grafico (sec):</label>
+      <input type="number" step="1" id="chart_buffer" name="chart_buffer" value="{{ config['chart_buffer'] }}">
+      
+      <label for="data_retention">Data Retention (sec):</label>
+      <input type="number" step="1" id="data_retention" name="data_retention" value="{{ config['data_retention'] }}">
+      
+      <label for="telegram_bot_token">Telegram Bot Token:</label>
+      <input type="text" id="telegram_bot_token" name="telegram_bot_token" value="{{ config['telegram_bot_token'] }}">
+      
+      <label for="telegram_chat_id">Telegram Chat ID:</label>
+      <input type="text" id="telegram_chat_id" name="telegram_chat_id" value="{{ config['telegram_chat_id'] }}">
+      
+      <label for="notifiche_abilitate">Abilita Notifiche Automatiche:</label>
+      <input type="checkbox" id="notifiche_abilitate" name="notifiche_abilitate" {% if config['notifiche_abilitate'] %}checked{% endif %}>
+      
+      <button type="submit">Aggiorna Configurazione</button>
+    </form>
+    <br>
+    <button class="test-btn" onclick="testNotification()">Test Notifica Telegram</button>
+    <p id="testResult"></p>
+    
+    <script>
+      async function testNotification() {
+        const response = await fetch('/test_notification');
+        const result = await response.text();
+        document.getElementById("testResult").innerText = result;
+      }
+    </script>
+  </div>
+</body>
+</html>
+

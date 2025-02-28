@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Storico Sismografo Casalingo</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 1200px; margin: auto; padding: 20px; }
+    .nav { margin-bottom: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    #historicoChart { border: 1px solid #ccc; height: 400px; }
+    .filter { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/historico">Storico</a>
+      <a href="/admin">Admin</a>
+    </div>
+    <h1>Storico Sismografo Casalingo</h1>
+    <div class="filter">
+      <label for="hist_start_date">Data Inizio:</label>
+      <input type="datetime-local" id="hist_start_date">
+      <label for="hist_end_date">Data Fine:</label>
+      <input type="datetime-local" id="hist_end_date">
+      <button onclick="loadHistoricalData()">Carica Storico</button>
+    </div>
+    <div id="historicoChart"></div>
+  </div>
+
+  <script>
+    function formatDateTime(date) {
+      let pad = num => num.toString().padStart(2, '0');
+      return date.getUTCFullYear() + "-" + pad(date.getUTCMonth()+1) + "-" + pad(date.getUTCDate()) + " " +
+             pad(date.getUTCHours()) + ":" + pad(date.getUTCMinutes()) + ":" + pad(date.getUTCSeconds());
+    }
+
+    async function loadHistoricalData() {
+      const start_date = document.getElementById("hist_start_date").value;
+      const end_date = document.getElementById("hist_end_date").value;
+      if (!start_date || !end_date) {
+        alert("Seleziona entrambe le date");
+        return;
+      }
+      const response = await fetch(`/data?start_date=${encodeURIComponent(start_date)}&end_date=${encodeURIComponent(end_date)}&limit=1000`);
+      const data = await response.json();
+      let chartData = data.map(d => ({
+        timestamp: new Date(d.timestamp),
+        magnitude: Math.sqrt(d.accel_x**2 + d.accel_y**2 + d.accel_z**2)
+      }));
+      drawHistoricalChart(chartData);
+    }
+
+    function drawHistoricalChart(data) {
+      const width = document.getElementById('historicoChart').clientWidth;
+      const height = 400;
+      d3.select("#historicoChart").selectAll("*").remove();
+      const svg = d3.select("#historicoChart").append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+      const xScale = d3.scaleTime()
+                       .domain(d3.extent(data, d => d.timestamp))
+                       .range([50, width - 20]);
+      const yScale = d3.scaleLinear()
+                       .domain(d3.extent(data, d => d.magnitude))
+                       .range([height - 50, 20]);
+      const xAxis = d3.axisBottom(xScale).ticks(6);
+      const yAxis = d3.axisLeft(yScale);
+      svg.append("g")
+         .attr("transform", `translate(0, ${height - 50})`)
+         .call(xAxis);
+      svg.append("g")
+         .attr("transform", `translate(50, 0)`)
+         .call(yAxis);
+      const line = d3.line()
+                     .x(d => xScale(d.timestamp))
+                     .y(d => yScale(d.magnitude));
+      svg.append("path")
+         .datum(data)
+         .attr("fill", "none")
+         .attr("stroke", "steelblue")
+         .attr("stroke-width", 2)
+         .attr("d", line);
+    }
+  </script>
+</body>
+</html>
+
