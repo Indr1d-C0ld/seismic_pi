@@ -17,8 +17,10 @@
   <div class="container">
     <div class="nav">
       <a href="/">Dashboard</a>
-      <a href="/historico">Storico</a>
       <a href="/admin">Admin</a>
+      <a href="/control">Controllo</a>
+      <a href="/admin/event_snapshots">Event Snapshots</a>
+      <a href="/logout">Logout</a>
     </div>
     <h1>Storico Sismografo Casalingo</h1>
     <div class="filter">
@@ -45,7 +47,7 @@
         alert("Seleziona entrambe le date");
         return;
       }
-      const response = await fetch(`/data?start_date=${encodeURIComponent(start_date)}&end_date=${encodeURIComponent(end_date)}&limit=1000`);
+      const response = await fetch(`/data?start_date=${encodeURIComponent(start_date)}&end_date=${encodeURIComponent(end_date)}&limit=10000`);
       const data = await response.json();
       let chartData = data.map(d => ({
         timestamp: new Date(d.timestamp),
@@ -60,14 +62,17 @@
       d3.select("#historicoChart").selectAll("*").remove();
       const svg = d3.select("#historicoChart").append("svg")
                     .attr("width", width)
-                    .attr("height", height);
+                    .attr("height", height)
+                    .call(d3.zoom().scaleExtent([0.5, 20]).on("zoom", function(event) {
+                      svg.attr("transform", event.transform);
+                    }));
       const xScale = d3.scaleTime()
                        .domain(d3.extent(data, d => d.timestamp))
                        .range([50, width - 20]);
       const yScale = d3.scaleLinear()
                        .domain(d3.extent(data, d => d.magnitude))
                        .range([height - 50, 20]);
-      const xAxis = d3.axisBottom(xScale).ticks(6);
+      const xAxis = d3.axisBottom(xScale).ticks(10);
       const yAxis = d3.axisLeft(yScale);
       svg.append("g")
          .attr("transform", `translate(0, ${height - 50})`)

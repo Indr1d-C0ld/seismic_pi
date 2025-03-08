@@ -15,22 +15,24 @@
     .nav { margin-bottom: 20px; }
     .nav a { margin-right: 20px; text-decoration: none; color: blue; }
     .filter, .chart-controls { margin-bottom: 20px; }
-    button.reset, button.live-btn { margin-top: 10px; padding: 5px 10px; }
+    button.reset { margin-top: 10px; }
+    button.live-btn { margin-top: 10px; padding: 5px 10px; }
     /* Quadrettatura tecnica */
-    .grid line {
-      stroke: #ccc;
-      stroke-dasharray: 2,2;
-    }
-    .grid path {
-      stroke-width: 0;
-    }
+    .grid line { stroke: #ccc; stroke-dasharray: 2,2; }
+    .grid path { stroke-width: 0; }
+    /* Legenda sotto il grafico */
+    #legend { margin-top: 10px; font-weight: bold; }
   </style>
 </head>
 <body>
   <div class="container">
+    <!-- Barra di navigazione: "Dashboard" eliminato -->
     <div class="nav">
-      <a href="/">Dashboard</a>
       <a href="/admin">Admin</a>
+      <a href="/control">Controllo</a>
+      <a href="/historico">Storico</a>
+      <a href="/admin/event_snapshots">Event Snapshots</a>
+      <a href="/logout">Logout</a>
     </div>
     <h1>Dashboard Sismografo Casalingo</h1>
     
@@ -55,19 +57,32 @@
     <!-- Controlli slide per il grafico -->
     <div class="section chart-controls">
       <h3>Controlli Grafico</h3>
-      <label for="xWindowSlider">Finestra temporale (secondi):</label>
-      <input type="range" id="xWindowSlider" min="60" max="1800" step="60" value="{{ config['chart_buffer'] }}">
+      <label for="xWindowSlider">Finestra temporale (sec):</label>
+      <input type="range" id="xWindowSlider" min="60" max="86400" step="60" value="{{ config['chart_buffer'] }}">
       <span id="xWindowValue">{{ config['chart_buffer'] }}</span> sec
       <br>
       <label for="yScaleSlider">Fattore scala Y:</label>
-      <input type="range" id="yScaleSlider" min="0.5" max="5" step="0.1" value="1">
+      <input type="range" id="yScaleSlider" min="0.5" max="20" step="0.1" value="1">
       <span id="yScaleValue">1</span>
+      <br>
+      <label for="xScaleSlider">Fattore scala X:</label>
+      <input type="range" id="xScaleSlider" min="0.5" max="10" step="0.1" value="1">
+      <span id="xScaleValue">1</span>
     </div>
 
     <!-- Grafico rullo sismografico -->
     <div class="section" id="graphSection">
       <h2>Rullo Sismografico</h2>
       <div id="chart"></div>
+      <!-- Legenda per modalità triple -->
+      <div id="legend" style="display: none;">
+        <span style="color:red;">Accel X</span> |
+        <span style="color:green;">Accel Y</span> |
+        <span style="color:blue;">Accel Z</span>
+      </div>
+      <!-- Pulsante per salvare snapshot manuale -->
+      <button onclick="saveSnapshot()">Salva Snapshot Evento (Manuale)</button>
+      <p id="snapshotResult"></p>
     </div>
 
     <!-- Dati grezzi -->
@@ -110,23 +125,35 @@
   </div>
 
   <script>
-    // Variabili di configurazione passate dal server
     var visualization_mode = "{{ config['visualization_mode'] }}";
-    var chart_buffer = parseFloat("{{ config['chart_buffer'] }}"); // in secondi
+    var chart_buffer = parseFloat("{{ config['chart_buffer'] }}");
 
-    // Flag per la modalità live (aggiornamento automatico)
     let liveMode = true;
     let currentFilters = {};
-
-    // Variabili globali per D3 e zoom
     let svg, gX, gY, gridGroup, lineGroup;
     let zoomTransform = d3.zoomIdentity;
     let xScale, yScale, xAxis, yAxis;
-    // Variabili per controlli slider
     let customXWindow = chart_buffer;
     let yScaleFactor = 1;
+    let xScaleFactor = 1;
+    let lastEventTimestamp = null;
 
-    // Formattazione della data in UTC
+    document.getElementById("xScaleSlider").addEventListener("input", function() {
+      xScaleFactor = parseFloat(this.value);
+      document.getElementById("xScaleValue").textContent = this.value;
+      updateChart();
+    });
+    document.getElementById("xWindowSlider").addEventListener("input", function() {
+      customXWindow = parseFloat(this.value);
+      document.getElementById("xWindowValue").textContent = this.value;
+      updateChart();
+    });
+    document.getElementById("yScaleSlider").addEventListener("input", function() {
+      yScaleFactor = parseFloat(this.value);
+      document.getElementById("yScaleValue").textContent = this.value;
+      updateChart();
+    });
+
     function formatDateTime(date) {
       let pad = num => num.toString().padStart(2, '0');
       return date.getUTCFullYear() + "-" + pad(date.getUTCMonth()+1) + "-" + pad(date.getUTCDate()) + " " +
@@ -167,7 +194,7 @@
     async function fetchRawData() {
       let url;
       if (currentFilters.start_date && currentFilters.end_date) {
-        url = `/data?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
+        url = `/data?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}&limit=10000`;
       } else {
         let now = new Date();
         let start = new Date(now.getTime() - customXWindow * 1000);
@@ -211,6 +238,13 @@
       const events = await fetchEventsData();
       const tbody = document.querySelector('#eventsTable tbody');
       tbody.innerHTML = '';
+      if (events.length > 0) {
+        let latestEvent = events[0];
+        if (lastEventTimestamp !== latestEvent.timestamp) {
+          saveSnapshot(); // Auto-snapshot per nuovo evento
+          lastEventTimestamp = latestEvent.timestamp;
+        }
+      }
       events.forEach(e => {
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${e.timestamp}</td>
@@ -221,7 +255,6 @@
       });
     }
 
-    // Funzione zoom per preservare il pan/zoom
     function zoomed(event) {
       zoomTransform = event.transform;
       liveMode = false;
@@ -230,20 +263,9 @@
       gridGroup.attr("transform", zoomTransform);
     }
 
-    // Gestione dei controlli slider per X e Y
-    document.getElementById("xWindowSlider").addEventListener("input", function() {
-      customXWindow = parseFloat(this.value);
-      document.getElementById("xWindowValue").textContent = this.value;
-      updateChart();
-    });
-    document.getElementById("yScaleSlider").addEventListener("input", function() {
-      yScaleFactor = parseFloat(this.value);
-      document.getElementById("yScaleValue").textContent = this.value;
-      updateChart();
-    });
-
     async function updateChart() {
       let data = await fetchRawData();
+      if (!data || data.length === 0) return;
       let chartData;
       if (visualization_mode === 'triple') {
         chartData = data.map(d => ({
@@ -252,11 +274,13 @@
           accel_y: d.accel_y,
           accel_z: d.accel_z
         }));
+        document.getElementById("legend").style.display = "block";
       } else {
         chartData = data.map(d => ({
           timestamp: new Date(d.timestamp),
           magnitude: Math.sqrt(d.accel_x**2 + d.accel_y**2 + d.accel_z**2)
         }));
+        document.getElementById("legend").style.display = "none";
       }
       
       const width = document.getElementById('chart').clientWidth;
@@ -270,28 +294,19 @@
         gX = svg.append("g").attr("class", "x-axis").attr("transform", `translate(0, ${height - 30})`);
         gY = svg.append("g").attr("class", "y-axis").attr("transform", `translate(40, 0)`);
         lineGroup = svg.append("g").attr("class", "lines");
-        
         svg.call(d3.zoom().scaleExtent([0.5, 20]).on("zoom", zoomed));
       } else {
         svg.attr("width", width).attr("height", height);
       }
       
-      // Se siamo in live mode, calcola il nuovo dominio X in base al buffer
-      if(liveMode){
-        let xExtent = d3.extent(chartData, d => d.timestamp);
-        xScale = d3.scaleTime().domain(xExtent).range([40, width - 20]);
-      } else {
-        // Se non siamo in live mode, mantieni il dominio attuale se definito
-        if(!xScale) {
-          let xExtent = d3.extent(chartData, d => d.timestamp);
-          xScale = d3.scaleTime().domain(xExtent).range([40, width - 20]);
-        }
-      }
+      let xExtent = d3.extent(chartData, d => d.timestamp);
+      let windowWidth = (xExtent[1] - xExtent[0]) * xScaleFactor;
+      let newDomain = [new Date(xExtent[1] - windowWidth), xExtent[1]];
+      xScale = d3.scaleTime().domain(newDomain).range([40, width - 20]);
       
       if (visualization_mode === 'triple') {
         let yMin = d3.min(chartData, d => Math.min(d.accel_x, d.accel_y, d.accel_z));
         let yMax = d3.max(chartData, d => Math.max(d.accel_x, d.accel_y, d.accel_z));
-        // Applica il fattore di scala Y
         yScale = d3.scaleLinear().domain([yMin * yScaleFactor, yMax * yScaleFactor]).range([height - 30, 10]);
       } else {
         let yExtent = d3.extent(chartData, d => d.magnitude);
@@ -301,7 +316,6 @@
       xAxis = d3.axisBottom(xScale).ticks(5);
       yAxis = d3.axisLeft(yScale);
       
-      // Disegna la grid tecnica
       gridGroup.selectAll("*").remove();
       let xGrid = d3.axisBottom(xScale)
                      .tickSize(-(height - 30))
@@ -320,20 +334,21 @@
                .attr("transform", `translate(40, 0)`)
                .call(yGrid);
       
-      if(liveMode){
-        gX.call(xAxis.scale(zoomTransform.rescaleX(xScale)));
-      }
+      gX.call(xAxis.scale(zoomTransform.rescaleX(xScale)));
       gY.call(yAxis);
       
       lineGroup.selectAll("*").remove();
       if (visualization_mode === 'triple') {
         let lineX = d3.line()
+                      .curve(d3.curveLinear)
                       .x(d => xScale(d.timestamp))
                       .y(d => yScale(d.accel_x));
         let lineY = d3.line()
+                      .curve(d3.curveLinear)
                       .x(d => xScale(d.timestamp))
                       .y(d => yScale(d.accel_y));
         let lineZ = d3.line()
+                      .curve(d3.curveLinear)
                       .x(d => xScale(d.timestamp))
                       .y(d => yScale(d.accel_z));
         lineGroup.append("path")
@@ -359,6 +374,7 @@
                  .attr("d", lineZ);
       } else {
         let lineMag = d3.line()
+                        .curve(d3.curveBasis)
                         .x(d => xScale(d.timestamp))
                         .y(d => yScale(d.magnitude));
         lineGroup.append("path")
@@ -370,11 +386,10 @@
                  .attr("d", lineMag);
       }
       
-      // Riapplica il trasformatore di zoom
       svg.selectAll(".lines").attr("transform", zoomTransform);
     }
 
-    function exportCSV() {
+    async function exportCSV() {
       let url = '/export/csv';
       if (currentFilters.start_date && currentFilters.end_date) {
         url += `?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
@@ -382,7 +397,7 @@
       window.location.href = url;
     }
 
-    function exportJSON() {
+    async function exportJSON() {
       let url = '/export/json';
       if (currentFilters.start_date && currentFilters.end_date) {
         url += `?start_date=${encodeURIComponent(currentFilters.start_date)}&end_date=${encodeURIComponent(currentFilters.end_date)}`;
@@ -390,7 +405,20 @@
       window.location.href = url;
     }
 
-    // Aggiornamenti periodici: se in live mode, il grafico si aggiorna mantenendo il pan/zoom
+    async function saveSnapshot() {
+      const svgElement = document.querySelector("#chart svg");
+      if (!svgElement) {
+        document.getElementById("snapshotResult").innerText = "Nessun grafico disponibile.";
+        return;
+      }
+      const svgData = svgElement.outerHTML;
+      const formData = new FormData();
+      formData.append("svg_data", svgData);
+      const response = await fetch('/admin/save_snapshot', { method: "POST", body: formData });
+      const result = await response.text();
+      document.getElementById("snapshotResult").innerText = result;
+    }
+
     setInterval(updateChart, 1000);
     setInterval(updateRawDataTable, 5000);
     setInterval(updateEventsTable, 5000);

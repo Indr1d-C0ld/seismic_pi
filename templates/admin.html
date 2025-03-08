@@ -19,7 +19,12 @@
     <div class="nav">
       <a href="/">Dashboard</a>
       <a href="/admin">Admin</a>
+      <a href="/control">Controllo</a>
       <a href="/historico">Storico</a>
+      <a href="/admin/event_snapshots">Event Snapshots</a>
+      <a href="/diagnostics">Diagnostics</a>
+      <a href="/admin/access_log">Access Log</a>
+      <a href="/logout">Logout</a>
     </div>
     <h1>Configurazione Sismografo Casalingo</h1>
     <form method="POST" action="/admin">
@@ -53,20 +58,33 @@
       <label for="notifiche_abilitate">Abilita Notifiche Automatiche:</label>
       <input type="checkbox" id="notifiche_abilitate" name="notifiche_abilitate" {% if config['notifiche_abilitate'] %}checked{% endif %}>
       
+      <label for="admin_password">Password Admin:</label>
+      <input type="password" id="admin_password" name="admin_password" value="{{ config['admin_password'] }}">
+      
       <button type="submit">Aggiorna Configurazione</button>
+    </form>
+    <br>
+    <!-- Pulsante per calibrare il sensore -->
+    <form method="POST" action="/admin/calibrate">
+      <button type="submit">Calibra Sensore</button>
+    </form>
+    <br>
+    <!-- Pulsante per resettare la calibrazione -->
+    <form method="POST" action="/admin/clear_calibration">
+      <button type="submit">Reset Calibrazione</button>
     </form>
     <br>
     <button class="test-btn" onclick="testNotification()">Test Notifica Telegram</button>
     <p id="testResult"></p>
-    
-    <script>
-      async function testNotification() {
-        const response = await fetch('/test_notification');
-        const result = await response.text();
-        document.getElementById("testResult").innerText = result;
-      }
-    </script>
   </div>
+  
+  <script>
+    async function testNotification() {
+      const response = await fetch('/test_notification');
+      const result = await response.text();
+      document.getElementById("testResult").innerText = result;
+    }
+  </script>
 </body>
 </html>
 

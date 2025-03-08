@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Event Snapshots - Sismografo Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 1000px; margin: auto; padding: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    .snapshot { border: 1px solid #ccc; margin-bottom: 20px; padding: 10px; }
+    pre { background: #f4f4f4; padding: 10px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/admin">Admin</a>
+      <a href="/">Dashboard</a>
+      <a href="/historico">Storico</a>
+      <a href="/control">Controllo</a>
+      <a href="/logout">Logout</a>
+    </div>
+    <h1>Event Snapshots</h1>
+    {% for snapshot in snapshots %}
+    <div class="snapshot">
+      <p><strong>ID:</strong> {{ snapshot.id }} | <strong>Event ID:</strong> {{ snapshot.event_id if snapshot.event_id else 'N/D' }} | <strong>Timestamp:</strong> {{ snapshot.timestamp }}</p>
+      <div>{{ snapshot.svg_data|safe }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</body>
+</html>
+

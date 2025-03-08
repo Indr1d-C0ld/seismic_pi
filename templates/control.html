@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Controllo Sismografo</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 800px; margin: auto; padding: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    button { padding: 10px 20px; margin: 10px; }
+    #output { white-space: pre-wrap; background: #f9f9f9; padding: 10px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/admin">Admin</a>
+      <a href="/control">Controllo</a>
+      <a href="/historico">Storico</a>
+      <a href="/logout">Logout</a>
+    </div>
+    <h1>Controllo Sismografo</h1>
+    <button onclick="sendCommand('start')">Start</button>
+    <button onclick="sendCommand('stop')">Stop</button>
+    <button onclick="sendCommand('status')">Status</button>
+    <button onclick="sendCommand('backup')">Backup Manuale</button>
+    <div id="output"></div>
+  </div>
+  <script>
+    async function sendCommand(cmd) {
+      const response = await fetch(`/control/${cmd}`);
+      const text = await response.text();
+      document.getElementById("output").innerText = text;
+    }
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Access Log - Sismografo Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 1000px; margin: auto; padding: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 5px; }
+    table { width: 100%; margin-top: 20px; }
+    pre { background: #f4f4f4; padding: 10px; border: 1px solid #ccc; }
+    button { padding: 5px 10px; margin: 5px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/admin">Admin</a>
+      <a href="/">Dashboard</a>
+      <a href="/historico">Storico</a>
+      <a href="/logout">Logout</a>
+    </div>
+    <h1>Access Log</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Timestamp</th>
+          <th>IP Address</th>
+          <th>User Agent</th>
+          <th>Whois</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.id }}</td>
+          <td>{{ log.timestamp }}</td>
+          <td>{{ log.ip_address }}</td>
+          <td>{{ log.user_agent }}</td>
+          <td><button onclick="lookupWhois('{{ log.ip_address }}')">Whois</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div id="whoisResult"></div>
+  </div>
+  <script>
+    async function lookupWhois(ip) {
+      const response = await fetch(`/admin/whois?ip=${encodeURIComponent(ip)}`);
+      const text = await response.text();
+      document.getElementById("whoisResult").innerHTML = text;
+    }
+  </script>
+</body>
+</html>
+

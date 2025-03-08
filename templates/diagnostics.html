@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Diagnostics - Sismografo Casalingo</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 900px; margin: auto; padding: 20px; }
+    .nav a { margin-right: 20px; text-decoration: none; color: blue; }
+    table, th, td { border: 1px solid #ccc; border-collapse: collapse; padding: 8px; }
+    table { width: 100%; margin-top: 20px; }
+    pre { background: #f4f4f4; padding: 10px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/admin">Admin</a>
+      <a href="/diagnostics">Diagnostics</a>
+      <a href="/logout">Logout</a>
+    </div>
+    <h1>Diagnostics del Raspberry Pi</h1>
+    <table>
+      <thead>
+        <tr><th>Parametro</th><th>Valore</th></tr>
+      </thead>
+      <tbody>
+        {% for key, value in diagnostics.items() %}
+        <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
+
